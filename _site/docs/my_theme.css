@@ -1,0 +1,29 @@
+.chart-title{
+  font-family: 'Roboto', sans-serif;
+  font-weight: 400;
+}
+
+.navbar-inverse{
+  background-color: #fff;
+  border-color: rgba(102,102,102,0.46);
+}
+
+.navbar-inverse .navbar-brand {
+    color: rgba(102,102,102);
+    font-family: 'Roboto', sans-serif;
+    font-weight: 400;
+}
+
+
+.navbar-inverse .navbar-brand:hover,
+.navbar-inverse .navbar-brand:focus {
+  color:  #666a6f;
+  background-color: none;
+}
+
+.section.sidebar {
+  top: 61px;
+  border-bottom: 10px solid #ececec;
+  border-left: 10px solid #ececec;
+  background-color: rgba(255, 255, 255, 1);
+}
