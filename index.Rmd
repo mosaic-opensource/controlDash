@@ -1,0 +1,450 @@
+---
+title: "Royal Express"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+    theme: simplex
+    css: www/my_theme.css
+    logo: www/logo.png
+    includes:
+      after_body: www/footer.html
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(crosstalk)
+library(tidyverse)
+library(gridExtra)
+library(lubridate)
+library(plotly)
+library(ggthemes)
+library(scales)
+library(rmarkdown)
+library(readr)
+library(RColorBrewer)
+library(dygraphs)
+library(xts)
+library(DT)
+
+load("../Data/GABASIC.RData")
+load("../Data/GAPAGEINFO.RData")
+load("../Data/GAADSINV.RData")
+load("../Data/GASALES.RData")
+
+```
+
+Fundamentais
+=======================================================================
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+fundamentals <- gaBasic %>% 
+  group_by(date) %>% 
+  summarise(
+    users = sum(users),
+    sessions = sum(sessions),
+    pageViews = sum(pageviews),
+    uniquePageViews = sum(uniquePageviews)
+  ) %>% 
+  left_join(
+    gaPages %>% 
+      group_by(date) %>% 
+      summarise(
+        bounceRate = mean(bounceRate, na.rm = TRUE),
+        avgTimeOnPage = mean(avgTimeOnPage, na.rm = TRUE),
+        bouncRate_median = median(bounceRate, na.rm = TRUE),
+        avgTimeOnPage_median = median(avgTimeOnPage, na.rm = TRUE)
+      ),
+    by = "date"
+  )
+
+
+grouped_sales <- export %>% 
+  group_by(date) %>% 
+  summarise(
+    quant_trans = n(),
+    value_trans = sum(totalValue),
+    value_avg = mean(totalValue, na.rm = TRUE)
+    )
+
+grouped_ads <- gaAds %>% 
+  group_by(date) %>% 
+  summarise(ga_investment = sum(adCost))
+
+roas_base <- grouped_sales %>% 
+  left_join(grouped_ads, by = "date")
+
+# correcting missing dates
+
+dateIndex = data.frame(index = seq(min(roas_base$date), max(roas_base$date), by = "days"))
+roas_base <- left_join(dateIndex, roas_base, by = c("index" = "date")) 
+
+## On case of NA we assume that investment is in line with previous day values
+roas_base <- tidyr::fill(roas_base, ga_investment)
+
+roas_base <- roas_base %>% mutate(
+  roas = value_trans / ga_investment,
+  cac = quant_trans / ga_investment
+  )
+
+```
+
+
+Column {data-width=150}
+-----------------------------------------------------------------------
+
+### Chart A {.value-box}
+
+```{r}
+valueBox(value = round(sum(roas_base$roas)), 
+         caption = "ROAS acumulado", 
+         #icon = "fas fa-user-md", 
+         color = "#FF6600")
+```
+
+### Chart A {.value-box}
+
+```{r}
+valueBox(value = round(sum(roas_base[month(roas_base$index) == 11,]$roas)), 
+         caption = "ROAS Mês corrente", 
+         #icon = "fas fa-user-md", 
+         color = "#FF6600")
+```
+
+### Chart A {.value-box}
+
+```{r}
+valueBox(value = round(sum(roas_base$cac)), 
+         caption = "CAC acumulado", 
+         #icon = "fas fa-user-md", 
+         color = "#353535")
+```
+
+### Chart A {.value-box}
+
+```{r}
+valueBox(value = round(sum(roas_base[month(roas_base$index) == 11,]$cac)), 
+         caption = "CAC Mês corrente", 
+         #icon = "fas fa-user-md", 
+         color = "#353535")
+```
+
+
+
+Column {data-width=425}
+-----------------------------------------------------------------------
+
+### Total sessões por mês
+
+```{r}
+
+ggplotly(
+  ggplot(data = fundamentals, aes(y = sessions, x = month(date, label=TRUE, abbr=TRUE))) + 
+  geom_bar(stat="identity",
+           fill = "#69b3a2", 
+           alpha=0.7) +
+  labs(x = "") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_classic()
+)
+
+```
+
+### Total de Users por mês
+
+```{r}
+
+ggplotly(
+  
+  ggplot(data = fundamentals,aes(y = users/1000, x = month(date, label=TRUE, abbr=TRUE))) + 
+  geom_bar(stat="identity",
+           fill = "#DD1C1A", alpha=0.6) +
+  labs(x = "") + 
+  scale_y_continuous(labels = scales::comma) +
+  theme_classic()
+  
+)
+
+```
+
+### Pageviews Mensal
+
+```{r}
+
+ggplotly(
+  ggplot(data = fundamentals,aes(y = pageViews/1000, x = month(date, label=TRUE, abbr=TRUE))) + 
+  geom_bar(stat="identity",
+           fill = "#F0C808", alpha=0.6) +
+  labs(x = "") + 
+  scale_y_continuous(labels = scales::comma) +
+  theme_classic()
+)
+
+```
+
+Column {data-width=425}
+-----------------------------------------------------------------------
+
+### Unique Page Views Mensal
+
+```{r}
+
+ggplotly(
+  ggplot(data = fundamentals,aes(y = uniquePageViews/1000, x = month(date, label=TRUE, abbr=TRUE))) + 
+  geom_bar(stat="identity",
+           fill = "#086788", alpha=0.5) +
+  labs(x = "") +
+  scale_y_continuous(labels = scales::comma) +
+  theme_classic()
+)
+
+```
+
+### Bounce Rate Mensal
+
+```{r}
+
+ggplotly(
+  fundamentals %>%
+  group_by(month = month(date, label=TRUE, abbr=TRUE)) %>% 
+  summarise(bounceRate = mean(bounceRate, na.rm = TRUE)) %>% 
+  ggplot( 
+    aes(y = bounceRate/100, 
+        x = month)
+  ) + 
+  geom_bar(stat="identity",
+           fill = "#FFB5C2", alpha=0.7) +
+  labs(x="") +
+  scale_y_continuous(labels = scales::percent) +
+  theme_classic()
+)
+
+```
+
+### Tempo médio por página
+
+```{r}
+
+ggplotly(
+  fundamentals %>%
+  group_by(month = month(date, label=TRUE, abbr=TRUE)) %>% 
+  summarise(avgTimeOnPage = mean(avgTimeOnPage, na.rm = TRUE)) %>% 
+  ggplot( 
+    aes(y = avgTimeOnPage/60, 
+        x = month)
+  ) + 
+  geom_bar(stat="identity",
+           fill = "#7A28CB", alpha=0.5) +
+  labs(x="Mês") +
+  theme_classic()
+)
+
+```
+
+Tráfego {data-orientation=rows}
+=======================================================================
+
+Row 
+-----------------------------------------------------------------------
+
+### Evolução tráfego (proxy: sessions)
+
+```{r}
+
+dyCrosshair <- function(dygraph, 
+                        direction = c("both", "horizontal", "vertical")) {
+  dyPlugin(
+    dygraph = dygraph,
+    name = "Crosshair",
+    path = system.file("plugins/crosshair.js", 
+                       package = "dygraphs"),
+    options = list(direction = match.arg(direction))
+  )
+}
+
+ts_fundamentals <- xts(fundamentals[,-1], order.by = as.Date(fundamentals$date))
+dygraph(ts_fundamentals$sessions) %>% 
+  dyOptions(colors="#69b3a2", fillGraph = TRUE, fillAlpha = 0.5, strokeWidth = 2) %>%
+  dyOptions(fillGraph = TRUE, drawGrid = FALSE) %>% 
+  dyRangeSelector(height = 20) %>% 
+  dyUnzoom() %>% 
+  dyRoller(rollPeriod = 0) %>% 
+  dyShading(from = "2020-3-18", to = "2020-5-1", color = "#FFE6E6") %>% 
+  dyShading(from = "2020-11-1", to = "2020-11-30", color = "#FFE6E6") %>% 
+  dyLimit(as.numeric(max(ts_fundamentals$sessions)), color = "blue") %>% 
+  dyCrosshair(direction = "vertical")
+
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+```{r include=FALSE}
+
+trafic_sources <- gaBasic %>% 
+  mutate(
+    t_users = sum(users),
+    t_sessions = sum(sessions)) %>% 
+  group_by(medium) %>% 
+  summarize(
+    users = sum(users),
+    sessions = sum(sessions),
+    sessions_perc = round(sum(sessions)/mean(t_sessions)*100,2),
+    users_perc = round(sum(users)/mean(t_users)*100,2)) %>% 
+  arrange(desc(sessions_perc))
+
+```
+
+
+### Sessões por origem
+
+```{r}
+
+sessions_sources <- trafic_sources %>% 
+  mutate(g = ifelse(sessions_perc > 10 ,medium,"other")) %>% 
+  group_by(g) %>% 
+  summarise(sessions_perc = sum(sessions_perc))
+
+labels <- paste(sessions_sources$g,"\n",sessions_sources$sessions_perc," %")
+pie(sessions_sources$sessions_perc, labels = labels, border = "white", col = brewer.pal(5, "YlOrRd"))
+
+```
+
+### Users por origem
+
+```{r}
+
+users_sources <- trafic_sources %>% 
+  mutate(g = ifelse(users_perc > 10 , medium, "other")) %>% 
+  group_by(g) %>% 
+  summarise(users_perc = sum(users_perc))
+
+labels <- paste(users_sources$g,"\n",users_sources$users_perc," %")
+pie(users_sources$users_perc, labels = labels, border = "white", col = brewer.pal(5, "YlOrRd"))
+
+
+```
+
+### Total de sessões por source
+
+```{r}
+
+groupSource <-  gaBasic %>% 
+  filter(medium == "referral") %>% 
+  group_by(source) %>% 
+  summarise(
+    sessions = sum(sessions),
+    users = sum(users)
+  ) %>% 
+  arrange(desc(sessions)) %>% 
+  mutate(class = 
+           case_when(
+             str_detect(source, "instagram") ~ "intragram",
+             str_detect(source, "facebook") ~ "facebook",
+             str_detect(source, "^.*royal.*$") ~ "self-referral",
+             str_detect(source, "^.*youtube.*$") ~ "youtube",
+             str_detect(source, "^.*t.com.*$") ~ "twitter",
+             str_detect(source, "^.*pay.*$") ~ "payment_gateway",
+             str_detect(source, "^.*paga.*$") ~ "payment_gateway",
+             str_detect(source, "^.*mybus.*$") ~ "self-referral",
+             str_detect(source, "^.*mybus.*$") ~ "self-referral",
+             str_detect(source, "^.*sendibm.*$") ~ "sendiblue",
+             str_detect(source, "^.*mybus.*$") ~ "self-referral",
+             str_detect(source, "^.*scott.*$") ~ "self-referral",
+             str_detect(source, "^.*localhost.*$") ~ "development",
+             str_detect(source, "^.*analytics.google.*$") ~ "development",
+             str_detect(source, "^.*tagmanager.*$") ~ "development",
+             TRUE ~ "other"
+           )
+         ) %>% 
+  ungroup() %>% 
+  group_by(class) %>% 
+  summarise(
+    sessions = sum(sessions),
+    users = sum(users)
+  )
+
+ggplotly(
+  ggplot(data = groupSource, 
+       aes(x = reorder(as.factor(class), -sessions) , y = sessions)
+      ) + 
+  geom_bar(stat="identity",
+           fill = "#086788", alpha=0.5) +
+  labs(x ="" ) +
+  scale_y_continuous(labels = scales::comma) + 
+  theme_classic()  
+)  
+
+
+```
+
+
+Investimento {data-orientation=rows}
+=======================================================================
+
+
+
+
+Row
+-----------------------------------------------------------------------
+
+### Google Ads investimento (euros)
+
+```{r}
+data <- select(roas_base,-value_avg, -quant_trans, -cac,-roas) %>% 
+  gather(key = "variable", value = "value", -index)
+
+
+ggplotly(
+  ggplot(data = data, 
+       aes(x = index, y  = value, color = variable, fill = variable)) + 
+  geom_area(alpha=0.2, position = 'identity') + 
+  geom_line() +
+  labs(x = "") +
+  scale_y_continuous(labels = scales::comma) + 
+  scale_x_date(date_breaks  = "5 day") + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 45))
+  )
+
+rm(data)
+
+
+```
+
+### Evolução diária CAC & ROAS
+
+```{r}
+
+data <- select(roas_base,roas,cac,index) %>% 
+  gather(key = "variable", value = "value", -index)
+
+
+ggplotly(
+  ggplot(data = data, 
+       aes(x = index, y  = value, color = variable, fill = variable)) + 
+  geom_area(alpha=0.2, position = 'identity') + 
+  geom_line() +
+  labs(x = "", y = "Google Ads investimento (euros)") +
+  scale_y_continuous(labels = scales::comma) + 
+  scale_x_date(date_breaks  = "5 day") + 
+  theme_classic() + 
+  theme(axis.text.x = element_text(angle = 45))
+  )
+
+rm(data)
+
+
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Chart B
+
+```{r}
+datatable(roas_base, class = 'cell-border stripe', rownames = FALSE, filter = 'top', options = list(
+  pageLength = 10, autoWidth = TRUE
+))
+```
